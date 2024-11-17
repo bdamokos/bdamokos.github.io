@@ -243,9 +243,9 @@
             return matrix;
         }
 
-        // Method 1a: Maximum sum of distances (GRIN)
+        // Method 1a: Maximum sum of distances (Global)
         function maxSumDistancesGlobal(colors, selectCount) {
-            console.log('Starting Maximum Sum (GRIN) calculation...');
+            console.log('Starting Maximum Sum (Global) calculation...');
             const start = performance.now();
             const labColors = colors.map(rgb2lab);
             
@@ -271,7 +271,7 @@
             // Simply take the top selectCount colors
             const selected = totalDistances.slice(0, selectCount).map(item => item.index);
             
-            console.log('Maximum Sum (grin) calculation complete');
+            console.log('Maximum Sum (Global) calculation complete');
             return {
                 colors: sortColors(selected.map(i => colors[i])),
                 time: performance.now() - start
@@ -721,10 +721,10 @@
                         .join(' ');
                     
                     switch(algorithmName) {
-                        case 'Maximum Sum Global':  // Changed from 'Maximum Sum (grin)'
+                        case 'Maximum Sum Global':  
                             selectedAlgorithms[algorithmName] = () => maxSumDistancesGlobal(initialColors, selectColors);
                             break;
-                        case 'Maximum Sum Sequential':  // Changed from 'Maximum Sum (Claude)'
+                        case 'Maximum Sum Sequential':  
                             selectedAlgorithms[algorithmName] = () => maxSumDistancesSequential(initialColors, selectColors);
                             break;
                         case 'Greedy':
@@ -826,7 +826,7 @@
 
         // Add console logging to the algorithm functions
         function maxSumDistancesSequential(colors, selectCount) {
-            console.log('Starting Maximum Sum (Claude) calculation...');
+            console.log('Starting Maximum Sum (Sequential) calculation...');
             const start = performance.now();
             const labColors = colors.map(rgb2lab);
             
@@ -874,7 +874,7 @@
                 candidates.splice(bestIdx, 1);
             }
             
-            console.log('Maximum Sum (Claude) calculation complete');
+            console.log('Maximum Sum (Sequential) calculation complete');
             return {
                 colors: sortColors(selected.map(i => colors[i])),
                 time: performance.now() - start
