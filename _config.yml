@@ -1,0 +1,27 @@
+title: Bence Damokos' Projects
+description: A collection of public transport and utility projects, including Brussels transit information display and color analysis tools
+baseurl: ""
+url: "https://bdamokos.github.io"
+
+# Social links (optional)
+github_username: bdamokos
+
+# Build settings
+markdown: kramdown
+theme: minima
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+
+# Exclude from processing
+exclude:
+  - .sass-cache/
+  - .jekyll-cache/
+  - gemfiles/
+  - Gemfile
+  - Gemfile.lock
+  - node_modules/
+  - vendor/bundle/
+  - vendor/cache/
+  - vendor/gems/
+  - vendor/ruby/
