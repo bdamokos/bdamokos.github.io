@@ -136,7 +136,7 @@
         const safeMps = Number.isFinite(mps) && mps > 0 ? mps : 0;
         const kmh = safeMps * 3.6;
         const mph = safeMps * 2.236936;
-        kmhEl.textContent = kmh.toFixed(1);
+        kmhEl.textContent = String(Math.round(kmh));
         mphEl.textContent = mph.toFixed(1);
       }
 
