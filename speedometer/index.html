@@ -262,6 +262,19 @@
       }
 
       startBtn.addEventListener("click", startGps);
+
+      const isLocalhost =
+        location.hostname === "localhost" || location.hostname === "127.0.0.1";
+      if (
+        "serviceWorker" in navigator &&
+        (location.protocol === "https:" || isLocalhost)
+      ) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("./sw.js").catch(() => {
+            // Page works without SW; this only affects offline capability.
+          });
+        });
+      }
     </script>
   </body>
 </html>
