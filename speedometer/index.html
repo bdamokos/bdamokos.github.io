@@ -111,10 +111,11 @@
       let displayMps = 0;
       let targetMps = 0;
       let rafId = null;
-      let samples = [];
+      let gpsStartedAt = 0;
+      let startupSamples = [];
 
-      const SAMPLE_WINDOW_MS = 3500;
       const MAX_REASONABLE_MPS = 80;
+      const STARTUP_WARMUP_MS = 3000;
 
       function toRad(deg) {
         return (deg * Math.PI) / 180;
@@ -158,26 +159,11 @@
         if (rafId === null) rafId = requestAnimationFrame(animateSpeed);
       }
 
-      function addSample(speedMps, timestampMs) {
-        if (!Number.isFinite(speedMps)) return;
-        samples.push({ t: timestampMs, v: Math.max(0, speedMps) });
-        const minTs = timestampMs - SAMPLE_WINDOW_MS;
-        while (samples.length && samples[0].t < minTs) samples.shift();
-      }
-
-      function getSmoothedSpeed() {
-        if (!samples.length) return 0;
-        const values = samples.map((s) => s.v).sort((a, b) => a - b);
-        let core = values;
-
-        // Trim outliers from both ends once we have enough samples.
-        if (values.length >= 5) {
-          const trim = Math.floor(values.length * 0.2);
-          core = values.slice(trim, values.length - trim);
-        }
-
-        const mean = core.reduce((sum, v) => sum + v, 0) / core.length;
-        return mean < 1.2 ? 0 : mean;
+      function getStartupSpeed(speedMps) {
+        startupSamples.push(speedMps);
+        if (startupSamples.length > 5) startupSamples.shift();
+        const sorted = startupSamples.slice().sort((a, b) => a - b);
+        return sorted[Math.floor(sorted.length / 2)] || 0;
       }
 
       function onPosition(pos) {
@@ -196,24 +182,31 @@
         // Derived speed is often more responsive on iOS than coords.speed.
         if (prevPos && prevTime) {
           const dt = (now - prevTime) / 1000;
-          if (dt > 0.2 && dt < 4) {
+          if (dt > 0.8 && dt < 4) {
             const meters = haversineMeters(prevPos, pos.coords);
             calcMps = meters / dt;
           }
         }
 
-        let mps = gpsMps ?? calcMps ?? 0;
-        if (calcMps != null && accuracy <= 40) {
+        const inWarmup = now - gpsStartedAt < STARTUP_WARMUP_MS;
+        let mps = gpsMps ?? 0;
+
+        if (!inWarmup && calcMps != null && accuracy <= 40) {
           mps = calcMps;
         }
+
         if (accuracy > 120) {
           // Ignore very noisy fixes that cause big spikes.
           mps = gpsMps ?? 0;
         }
         mps = Math.min(MAX_REASONABLE_MPS, Math.max(0, mps));
+        if (mps < 1.2) mps = 0;
 
-        addSample(mps, now);
-        setSpeed(getSmoothedSpeed());
+        if (inWarmup) {
+          setSpeed(getStartupSpeed(mps));
+        } else {
+          setSpeed(mps);
+        }
         prevPos = pos.coords;
         prevTime = now;
       }
@@ -255,6 +248,11 @@
         if (watchId !== null) {
           navigator.geolocation.clearWatch(watchId);
         }
+
+        prevPos = null;
+        prevTime = 0;
+        gpsStartedAt = Date.now();
+        startupSamples = [];
 
         watchId = navigator.geolocation.watchPosition(onPosition, onError, {
           enableHighAccuracy: true,
