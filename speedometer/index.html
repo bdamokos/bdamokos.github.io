@@ -111,6 +111,10 @@
       let displayMps = 0;
       let targetMps = 0;
       let rafId = null;
+      let samples = [];
+
+      const SAMPLE_WINDOW_MS = 3500;
+      const MAX_REASONABLE_MPS = 80;
 
       function toRad(deg) {
         return (deg * Math.PI) / 180;
@@ -150,8 +154,30 @@
       }
 
       function setSpeed(mps) {
-        targetMps = Math.min(80, Math.max(0, mps || 0));
+        targetMps = Math.min(MAX_REASONABLE_MPS, Math.max(0, mps || 0));
         if (rafId === null) rafId = requestAnimationFrame(animateSpeed);
+      }
+
+      function addSample(speedMps, timestampMs) {
+        if (!Number.isFinite(speedMps)) return;
+        samples.push({ t: timestampMs, v: Math.max(0, speedMps) });
+        const minTs = timestampMs - SAMPLE_WINDOW_MS;
+        while (samples.length && samples[0].t < minTs) samples.shift();
+      }
+
+      function getSmoothedSpeed() {
+        if (!samples.length) return 0;
+        const values = samples.map((s) => s.v).sort((a, b) => a - b);
+        let core = values;
+
+        // Trim outliers from both ends once we have enough samples.
+        if (values.length >= 5) {
+          const trim = Math.floor(values.length * 0.2);
+          core = values.slice(trim, values.length - trim);
+        }
+
+        const mean = core.reduce((sum, v) => sum + v, 0) / core.length;
+        return mean < 1.2 ? 0 : mean;
       }
 
       function onPosition(pos) {
@@ -163,23 +189,31 @@
             ? pos.coords.speed
             : null;
         let calcMps = null;
+        const accuracy = Number.isFinite(pos.coords.accuracy)
+          ? pos.coords.accuracy
+          : 999;
 
         // Derived speed is often more responsive on iOS than coords.speed.
         if (prevPos && prevTime) {
           const dt = (now - prevTime) / 1000;
-          if (dt > 0.2) {
+          if (dt > 0.2 && dt < 4) {
             const meters = haversineMeters(prevPos, pos.coords);
             calcMps = meters / dt;
           }
         }
 
         let mps = gpsMps ?? calcMps ?? 0;
-        if (calcMps != null && (pos.coords.accuracy || 999) <= 35) {
+        if (calcMps != null && accuracy <= 40) {
           mps = calcMps;
         }
-        if (mps < 0.7) mps = 0;
+        if (accuracy > 120) {
+          // Ignore very noisy fixes that cause big spikes.
+          mps = gpsMps ?? 0;
+        }
+        mps = Math.min(MAX_REASONABLE_MPS, Math.max(0, mps));
 
-        setSpeed(mps);
+        addSample(mps, now);
+        setSpeed(getSmoothedSpeed());
         prevPos = pos.coords;
         prevTime = now;
       }
