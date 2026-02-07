@@ -92,9 +92,9 @@
   <body>
     <main>
       <h1>Current Speed</h1>
-      <div class="speed"><span id="kmh">0.0</span></div>
+      <div class="speed"><span id="kmh">0</span></div>
       <div class="unit">km/h</div>
-      <div class="secondary"><span id="mph">0.0</span> mph</div>
+      <div class="secondary"><span id="mph">0</span> mph</div>
       <p class="status" id="status">Tap start to request GPS.</p>
       <button id="start" type="button">Start GPS</button>
     </main>
@@ -138,7 +138,7 @@
         const kmh = safeMps * 3.6;
         const mph = safeMps * 2.236936;
         kmhEl.textContent = String(Math.round(kmh));
-        mphEl.textContent = mph.toFixed(1);
+        mphEl.textContent = String(Math.round(mph));
       }
 
       function animateSpeed() {
