@@ -95,8 +95,8 @@
       <div class="speed"><span id="kmh">0</span></div>
       <div class="unit">km/h</div>
       <div class="secondary"><span id="mph">0</span> mph</div>
-      <p class="status" id="status">Tap start to request GPS.</p>
-      <button id="start" type="button">Start GPS</button>
+      <p class="status" id="status">Starting GPS...</p>
+      <button id="start" type="button">Retry GPS / Enable Motion</button>
     </main>
 
     <script>
@@ -113,9 +113,16 @@
       let rafId = null;
       let gpsStartedAt = 0;
       let startupSamples = [];
+      let lastStartFromUserGesture = false;
+      let motionFallbackActive = false;
+      let motionPrevTs = 0;
+      let motionMps = 0;
 
       const MAX_REASONABLE_MPS = 80;
       const STARTUP_WARMUP_MS = 3000;
+      const MOTION_NOISE_MPS2 = 0.35;
+      const MOTION_MAX_MPS = 35;
+      const MOTION_DAMPING_PER_SEC = 0.55;
 
       function toRad(deg) {
         return (deg * Math.PI) / 180;
@@ -166,8 +173,90 @@
         return sorted[Math.floor(sorted.length / 2)] || 0;
       }
 
+      function stopMotionFallback() {
+        if (!motionFallbackActive) return;
+        window.removeEventListener("devicemotion", onDeviceMotion);
+        motionFallbackActive = false;
+        motionPrevTs = 0;
+        motionMps = 0;
+      }
+
+      function getMotionMagnitude(ev) {
+        const use = ev.acceleration || ev.accelerationIncludingGravity;
+        if (!use) return null;
+        const x = Number.isFinite(use.x) ? use.x : 0;
+        const y = Number.isFinite(use.y) ? use.y : 0;
+        const z = Number.isFinite(use.z) ? use.z : 0;
+        if (!Number.isFinite(x + y + z)) return null;
+        const mag = Math.hypot(x, y, z);
+        if (ev.acceleration) return mag;
+        // Fallback when only gravity-including acceleration is available.
+        return Math.max(0, Math.abs(mag - 9.81));
+      }
+
+      function onDeviceMotion(ev) {
+        if (!motionFallbackActive) return;
+        const ts = Number.isFinite(ev.timeStamp) ? ev.timeStamp : performance.now();
+        if (!motionPrevTs) {
+          motionPrevTs = ts;
+          return;
+        }
+        const dt = (ts - motionPrevTs) / 1000;
+        motionPrevTs = ts;
+        if (!(dt > 0 && dt < 0.5)) return;
+
+        const accelMag = getMotionMagnitude(ev);
+        if (accelMag == null) return;
+        const linearAccel = Math.max(0, accelMag - MOTION_NOISE_MPS2);
+
+        motionMps += linearAccel * dt;
+        motionMps *= Math.pow(MOTION_DAMPING_PER_SEC, dt);
+        motionMps = Math.max(0, Math.min(MOTION_MAX_MPS, motionMps));
+        if (motionMps < 0.5) motionMps = 0;
+        setSpeed(motionMps);
+      }
+
+      async function maybeStartMotionFallback(fromUserGesture, reasonText) {
+        if (motionFallbackActive) return true;
+        if (typeof DeviceMotionEvent === "undefined") {
+          statusEl.textContent = `${reasonText} Motion fallback is not supported on this device.`;
+          return false;
+        }
+
+        const hasPermissionApi =
+          typeof DeviceMotionEvent.requestPermission === "function";
+        if (hasPermissionApi) {
+          if (!fromUserGesture) {
+            statusEl.textContent =
+              `${reasonText} Tap the button to allow motion fallback.`;
+            return false;
+          }
+          try {
+            const permission = await DeviceMotionEvent.requestPermission();
+            if (permission !== "granted") {
+              statusEl.textContent =
+                `${reasonText} Motion permission was denied.`;
+              return false;
+            }
+          } catch {
+            statusEl.textContent =
+              `${reasonText} Could not enable motion fallback.`;
+            return false;
+          }
+        }
+
+        motionPrevTs = 0;
+        motionMps = 0;
+        motionFallbackActive = true;
+        window.addEventListener("devicemotion", onDeviceMotion);
+        statusEl.textContent = "GPS unavailable. Using motion estimate (rough).";
+        return true;
+      }
+
       function onPosition(pos) {
+        stopMotionFallback();
         statusEl.textContent = "GPS active";
+        startBtn.disabled = false;
 
         const now = pos.timestamp;
         const gpsMps =
@@ -213,35 +302,55 @@
 
       function onError(err) {
         if (err.code === 1) {
-          statusEl.textContent = "Location access denied in Safari settings.";
+          void maybeStartMotionFallback(
+            lastStartFromUserGesture,
+            "Location access denied."
+          );
           startBtn.disabled = false;
           return;
         }
         if (err.code === 2) {
-          statusEl.textContent = "Location unavailable. Wait for GPS lock.";
-          return;
-        }
-        if (err.code === 3) {
-          statusEl.textContent = "Location timed out. Try again.";
+          void maybeStartMotionFallback(
+            lastStartFromUserGesture,
+            "Location unavailable."
+          );
           startBtn.disabled = false;
           return;
         }
-        statusEl.textContent = "Unable to read GPS.";
+        if (err.code === 3) {
+          void maybeStartMotionFallback(
+            lastStartFromUserGesture,
+            "Location timed out."
+          );
+          startBtn.disabled = false;
+          return;
+        }
+        void maybeStartMotionFallback(
+          lastStartFromUserGesture,
+          "Unable to read GPS."
+        );
         startBtn.disabled = false;
       }
 
-      function startGps() {
+      function startGps(fromUserGesture = false) {
+        lastStartFromUserGesture = fromUserGesture;
         if (!("geolocation" in navigator)) {
-          statusEl.textContent = "Geolocation is not supported in this browser.";
+          void maybeStartMotionFallback(
+            fromUserGesture,
+            "Geolocation is not supported in this browser."
+          );
+          startBtn.disabled = false;
           return;
         }
 
         if (location.protocol === "file:") {
           statusEl.textContent =
             "Safari blocks GPS from local files. Open this page via HTTPS.";
+          startBtn.disabled = false;
           return;
         }
 
+        stopMotionFallback();
         statusEl.textContent = "Requesting GPS permission...";
         startBtn.disabled = true;
 
@@ -261,20 +370,23 @@
         });
       }
 
-      startBtn.addEventListener("click", startGps);
+      startBtn.addEventListener("click", () => {
+        startGps(true);
+      });
 
       const isLocalhost =
         location.hostname === "localhost" || location.hostname === "127.0.0.1";
-      if (
-        "serviceWorker" in navigator &&
-        (location.protocol === "https:" || isLocalhost)
-      ) {
-        window.addEventListener("load", () => {
+      window.addEventListener("load", () => {
+        startGps(false);
+        if (
+          "serviceWorker" in navigator &&
+          (location.protocol === "https:" || isLocalhost)
+        ) {
           navigator.serviceWorker.register("./sw.js").catch(() => {
             // Page works without SW; this only affects offline capability.
           });
-        });
-      }
+        }
+      });
     </script>
   </body>
 </html>
