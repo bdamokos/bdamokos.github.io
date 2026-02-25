@@ -113,7 +113,6 @@
       let rafId = null;
       let gpsStartedAt = 0;
       let startupSamples = [];
-      const MAX_REASONABLE_MPS = 80;
       const STARTUP_WARMUP_MS = 3000;
 
       function toRad(deg) {
@@ -154,7 +153,7 @@
       }
 
       function setSpeed(mps) {
-        targetMps = Math.min(MAX_REASONABLE_MPS, Math.max(0, mps || 0));
+        targetMps = Math.max(0, mps || 0);
         if (rafId === null) rafId = requestAnimationFrame(animateSpeed);
       }
 
@@ -199,7 +198,7 @@
           // Ignore very noisy fixes that cause big spikes.
           mps = gpsMps ?? 0;
         }
-        mps = Math.min(MAX_REASONABLE_MPS, Math.max(0, mps));
+        mps = Math.max(0, mps);
         if (mps < 1.2) mps = 0;
 
         if (inWarmup) {
